@@ -1,0 +1,16 @@
+name: Run Feature Candidate Deploy
+
+description: Run Feature Candidate Deploy
+
+inputs:
+  CICD_GITHUB_TOKEN:
+    required: true
+    description: TOKEN
+
+runs:
+  using: "composite"
+  steps:
+  - name: Baixando código do repositório
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0

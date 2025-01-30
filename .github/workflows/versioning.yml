@@ -1,0 +1,11 @@
+name: Caller Workflow
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  workflow-calling:
+    uses: comexio/github-versioning-automation-workflow/.github/workflows/versioning_automation.yml@main
+    secrets: inherit
