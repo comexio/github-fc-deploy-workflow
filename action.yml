@@ -1,16 +1,146 @@
-name: Run Feature Candidate Deploy
+name: GitHub Feature Candidate Deploy Workflow
 
-description: Run Feature Candidate Deploy
+description: Reutiliza processos de build de imagem Docker, upload de arquivos e deploy para servidores EC2.
 
 inputs:
-  CICD_GITHUB_TOKEN:
+  AWS_ACCESS_KEY_ID:
     required: true
-    description: TOKEN
+    description: AWS Access Key ID
+  AWS_SECRET_ACCESS_KEY:
+    required: true
+    description: AWS Secret Key
+  AWS_REGION:
+    required: true
+    description: AWS Region
+  AWS_S3_BUCKET:
+    required: false
+    description: Nome do bucket S3 para baixar arquivos (se aplicável)
+  ENV_FILE_PATH:
+    required: false
+    description: Caminho do arquivo de ambiente no S3 (se aplicável)
+  ENV_ENCRYPTION_PASSWORD:
+    required: false
+    description: Senha de criptografia do arquivo .env
+  ECR_REGISTRY:
+    required: false
+    description: URL do repositório ECR
+  IMAGE_NAME:
+    required: false
+    description: Nome da imagem no ECR
+  DOCKERFILE_PATH:
+    required: false
+    description: Caminho para o Dockerfile
+  BASE_IMAGE:
+    required: false
+    description: Imagem base (se necessário)
+  DEPLOY_FILES:
+    required: false
+    description: Lista de arquivos a serem empacotados para deploy
+  ARTIFACT_NAME:
+    required: false
+    description: Nome do artefato de deploy
+  RETENTION_DAYS:
+    required: false
+    description: Dias de retenção do artefato
+    default: "1"
+  SERVER_LIST:
+    required: false
+    description: Lista de servidores para deploy (em formato JSON)
+  SSH_USER:
+    required: false
+    description: Usuário SSH para deploy
+  SSH_KEY_FILE:
+    required: false
+    description: Chave SSH para acessar os servidores
+  OVPN_CONFIG_FILE:
+    required: false
+    description: Configuração do OpenVPN (se necessário)
+  OVPN_CERT_PASS:
+    required: false
+    description: Senha do OpenVPN (se necessário)
+  GITHUB_COMMIT:
+    required: false
+    description: Commit/tag para deploy
 
 runs:
   using: "composite"
   steps:
-  - name: Baixando código do repositório
-    uses: actions/checkout@v4
+  - name: Configurando credenciais da AWS
+    uses: aws-actions/configure-aws-credentials@v2
     with:
-      fetch-depth: 0
+      aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ${{ inputs.AWS_REGION }}
+
+  - name: Baixando e descriptografando arquivo .env (se aplicável)
+    if: ${{ inputs.AWS_S3_BUCKET != '' && inputs.ENV_FILE_PATH != '' && inputs.ENV_ENCRYPTION_PASSWORD != '' }}
+    run: |
+      aws s3 cp s3://${{ inputs.AWS_S3_BUCKET }}/${{ inputs.ENV_FILE_PATH }} /tmp/env.gpg
+      gpg -d --batch --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env.gpg > .env
+    shell: bash
+
+  - name: Autenticando no ECR (se aplicável)
+    if: ${{ inputs.ECR_REGISTRY != '' }}
+    uses: docker/login-action@v2
+    with:
+      registry: ${{ inputs.ECR_REGISTRY }}
+
+  - name: Gerando Tags e Labels para a imagem Docker (se aplicável)
+    id: meta
+    if: ${{ inputs.IMAGE_NAME != '' }}
+    uses: docker/metadata-action@v4
+    with:
+      images: ${{ inputs.IMAGE_NAME }}
+      flavor: latest=true
+      tags: type=sha,format=long,prefix=
+
+  - name: Build e Push da Imagem Docker (se aplicável)
+    if: ${{ inputs.DOCKERFILE_PATH != '' }}
+    uses: docker/build-push-action@v3
+    with:
+      context: .
+      file: ${{ inputs.DOCKERFILE_PATH }}
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
+      push: true
+      build-args: |
+        IMAGE=${{ inputs.BASE_IMAGE }}
+
+  - name: Criando diretório para compactação de deploy (se aplicável)
+    if: ${{ inputs.DEPLOY_FILES != '' }}
+    run: mkdir -p /tmp/deploy
+    shell: bash
+
+  - name: Copiando arquivos para compactar (se aplicável)
+    if: ${{ inputs.DEPLOY_FILES != '' }}
+    run: |
+      for file in ${{ inputs.DEPLOY_FILES }}; do
+        cp $file /tmp/deploy/
+      done
+    shell: bash
+
+  - name: Criando arquivo compactado de Deploy (se aplicável)
+    if: ${{ inputs.DEPLOY_FILES != '' }}
+    run: tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/.
+    shell: bash
+
+  - name: Armazenando arquivo de Deploy (se aplicável)
+    if: ${{ inputs.ARTIFACT_NAME != '' }}
+    uses: actions/upload-artifact@v4
+    with:
+      name: ${{ inputs.ARTIFACT_NAME }}
+      path: /tmp/deploy.tar.gz
+      retention-days: ${{ inputs.RETENTION_DAYS }}
+
+  - name: Realizando Deploy nos Servidores EC2 (se aplicável)
+    if: ${{ inputs.SERVER_LIST != '' }}
+    uses: comexio/international-logistic-captation/.github/workflows/reusable-ec2-deploy.yml@master
+    with:
+      SERVERS: ${{ inputs.SERVER_LIST }}
+      GITHUB_COMMIT: ${{ inputs.GITHUB_COMMIT }}
+      OVPN_CONFIG_FILE: ${{ inputs.OVPN_CONFIG_FILE }}
+      OVPN_CERT_PASS: ${{ inputs.OVPN_CERT_PASS }}
+      SSH_USER: ${{ inputs.SSH_USER }}
+      SSH_KEY_FILE: ${{ inputs.SSH_KEY_FILE }}
+
+## inserir processos de fechamento de releases e tag no github
