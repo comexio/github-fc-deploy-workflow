@@ -1,6 +1,6 @@
-name: GitHub Feature Candidate Deploy Workflow
+name: GitHub Feature/Release Candidate Deploy Workflow
 
-description: Reutiliza processos de build de imagem Docker, upload de arquivos e deploy para servidores EC2.
+description: Reutiliza processos de build de imagem Docker, upload de arquivos e deploy para servidores EC2, incluindo conexão via VPN.
 
 inputs:
   AWS_ACCESS_KEY_ID:
@@ -45,7 +45,7 @@ inputs:
     default: "1"
   SERVER_LIST:
     required: false
-    description: Lista de servidores para deploy (em formato JSON)
+    description: Lista de servidores para deploy (JSON)
   SSH_USER:
     required: false
     description: Usuário SSH para deploy
@@ -61,6 +61,15 @@ inputs:
   GITHUB_COMMIT:
     required: false
     description: Commit/tag para deploy
+  ORIGIN:
+    required: false
+    description: Origem da release (fc, hotfix, etc.)
+  GITHUB_TOKEN:
+    required: false
+    description: Token do GitHub para criar a release
+  TAG:
+    required: false
+    description: Tag da release no GitHub
 
 runs:
   using: "composite"
@@ -85,62 +94,74 @@ runs:
     with:
       registry: ${{ inputs.ECR_REGISTRY }}
 
-  - name: Gerando Tags e Labels para a imagem Docker (se aplicável)
-    id: meta
-    if: ${{ inputs.IMAGE_NAME != '' }}
-    uses: docker/metadata-action@v4
-    with:
-      images: ${{ inputs.IMAGE_NAME }}
-      flavor: latest=true
-      tags: type=sha,format=long,prefix=
-
   - name: Build e Push da Imagem Docker (se aplicável)
     if: ${{ inputs.DOCKERFILE_PATH != '' }}
     uses: docker/build-push-action@v3
     with:
       context: .
       file: ${{ inputs.DOCKERFILE_PATH }}
-      tags: ${{ steps.meta.outputs.tags }}
-      labels: ${{ steps.meta.outputs.labels }}
+      tags: ${{ inputs.IMAGE_NAME }}:${{ inputs.GITHUB_COMMIT }}
       push: true
       build-args: |
         IMAGE=${{ inputs.BASE_IMAGE }}
 
-  - name: Criando diretório para compactação de deploy (se aplicável)
-    if: ${{ inputs.DEPLOY_FILES != '' }}
-    run: mkdir -p /tmp/deploy
-    shell: bash
-
-  - name: Copiando arquivos para compactar (se aplicável)
+  - name: Criando e Armazenando Artefato de Deploy (se aplicável)
     if: ${{ inputs.DEPLOY_FILES != '' }}
     run: |
+      mkdir -p /tmp/deploy
       for file in ${{ inputs.DEPLOY_FILES }}; do
         cp $file /tmp/deploy/
       done
+      tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/.
     shell: bash
 
-  - name: Criando arquivo compactado de Deploy (se aplicável)
-    if: ${{ inputs.DEPLOY_FILES != '' }}
-    run: tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/.
-    shell: bash
-
-  - name: Armazenando arquivo de Deploy (se aplicável)
-    if: ${{ inputs.ARTIFACT_NAME != '' }}
-    uses: actions/upload-artifact@v4
-    with:
-      name: ${{ inputs.ARTIFACT_NAME }}
-      path: /tmp/deploy.tar.gz
-      retention-days: ${{ inputs.RETENTION_DAYS }}
-
-  - name: Realizando Deploy nos Servidores EC2 (se aplicável)
+  - name: Executando Deploy nos Servidores EC2 (se aplicável)
     if: ${{ inputs.SERVER_LIST != '' }}
-    uses: comexio/international-logistic-captation/.github/workflows/reusable-ec2-deploy.yml@master
-    with:
-      SERVERS: ${{ inputs.SERVER_LIST }}
-      GITHUB_COMMIT: ${{ inputs.GITHUB_COMMIT }}
-      OVPN_CONFIG_FILE: ${{ inputs.OVPN_CONFIG_FILE }}
-      OVPN_CERT_PASS: ${{ inputs.OVPN_CERT_PASS }}
-      SSH_USER: ${{ inputs.SSH_USER }}
-      SSH_KEY_FILE: ${{ inputs.SSH_KEY_FILE }}
+    run: |
+      for server in $(echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]'); do
+        NAME=$(echo $server | jq -r '.name')
+        IP=$(echo $server | jq -r '.ip')
 
-## inserir processos de fechamento de releases e tag no github
+        echo "Deploy para: $NAME ($IP)"
+
+        if [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]]; then
+          echo "Instalando OpenVPN e conectando à VPN..."
+          sudo apt-get update && sudo apt-get install -y openvpn
+          echo "${{ inputs.OVPN_CERT_PASS }}" > vpn_pass.txt
+          echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
+          echo "route $IP 255.255.255.255" >> cicd.ovpn
+          echo "route-nopull" >> cicd.ovpn
+          sudo openvpn --config cicd.ovpn --askpass vpn_pass.txt --daemon
+          sleep 5
+        fi
+
+        echo "Salvando chave SSH"
+        echo "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
+        chmod 600 ssh_key.pem
+
+        echo "Enviando e executando deploy no servidor"
+        scp -o StrictHostKeyChecking=no -i ssh_key.pem /tmp/deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/
+        ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP <<EOF
+          tar -xzf /tmp/deploy.tar.gz -C /tmp/
+          export GITHUB_COMMIT="${{ inputs.GITHUB_COMMIT }}"
+          bash /tmp/deploy/up.sh
+          rm -rf /tmp/deploy /tmp/deploy.tar.gz
+        EOF
+
+        echo "Encerrando VPN (se aplicável)"
+        [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]] && sudo killall openvpn
+      done
+    shell: bash
+
+  - name: Criando Release no GitHub após Deploy
+    if: ${{ inputs.ORIGIN != '' && inputs.GITHUB_TOKEN != '' && inputs.TAG != '' }}
+    env:
+      GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+    run: |
+      gh auth status || exit 1
+      if [[ "${{ inputs.ORIGIN }}" == "fc" ]]; then
+        gh release create ${{ inputs.TAG }} --title "Release ${{ inputs.TAG }}" --notes "Release ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
+      elif [[ "${{ inputs.ORIGIN }}" == "hotfix" ]]; then
+        gh release create ${{ inputs.TAG }} --title "Hotfix ${{ inputs.TAG }}" --notes "Hotfix ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
+      fi
+    shell: bash
