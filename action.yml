@@ -94,6 +94,15 @@ runs:
     with:
       registry: ${{ inputs.ECR_REGISTRY }}
 
+  - name: Gerando Tags e Labels para usar na imagem
+    id: meta
+    uses: docker/metadata-action@v4
+    with:
+      # images: 081818032380.dkr.ecr.sa-east-1.amazonaws.com/international-logistic-captation_prd-app
+      images: ${{ inputs.ECR_REGISTRY }}
+      flavor: latest=true
+      tags: type=sha,format=long,prefix=
+
   - name: Build e Push da Imagem Docker (se aplicável)
     if: ${{ inputs.DOCKERFILE_PATH != '' }}
     uses: docker/build-push-action@v3
