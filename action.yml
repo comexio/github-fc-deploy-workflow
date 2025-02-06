@@ -75,7 +75,7 @@ runs:
   using: "composite"
   steps:
   - name: Configurando credenciais da AWS
-    uses: aws-actions/configure-aws-credentials@v2
+    uses: aws-actions/configure-aws-credentials@v4
     with:
       aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
       aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
@@ -90,7 +90,7 @@ runs:
 
   - name: Autenticando no ECR (se aplicável)
     if: ${{ inputs.ECR_REGISTRY != '' }}
-    uses: docker/login-action@v2
+    uses: docker/login-action@v3
     with:
       registry: ${{ inputs.ECR_REGISTRY }}
 
