@@ -98,8 +98,7 @@ runs:
     id: meta
     uses: docker/metadata-action@v4
     with:
-      # images: 081818032380.dkr.ecr.sa-east-1.amazonaws.com/international-logistic-captation_prd-app
-      images: ${{ inputs.ECR_REGISTRY }}
+      images: ${{ inputs.ECR_REGISTRY }}/${{ inputs.IMAGE_NAME }}
       flavor: latest=true
       tags: type=sha,format=long,prefix=
 
@@ -109,7 +108,7 @@ runs:
     with:
       context: .
       file: ${{ inputs.DOCKERFILE_PATH }}
-      tags: ${{ inputs.IMAGE_NAME }}:${{ inputs.GITHUB_COMMIT }}
+      tags: ${{ inputs.ECR_REGISTRY }}/${{ inputs.IMAGE_NAME }}:${{ steps.meta.outputs.tags }}
       push: true
       build-args: |
         IMAGE=${{ inputs.BASE_IMAGE }}
@@ -136,9 +135,13 @@ runs:
         if [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]]; then
           echo "Instalando OpenVPN e conectando à VPN..."
           sudo apt-get update && sudo apt-get install -y openvpn
+          
           echo "${{ inputs.OVPN_CERT_PASS }}" > vpn_pass.txt
           echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
-          echo "route $IP 255.255.255.255" >> cicd.ovpn
+          for server in $(echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]'); do
+            IP=$(echo $server | jq -r '.ip')
+            echo "route $IP 255.255.255.255" >> cicd.ovpn
+          done
           echo "route-nopull" >> cicd.ovpn
           sudo openvpn --config cicd.ovpn --askpass vpn_pass.txt --daemon
           sleep 5
@@ -173,4 +176,10 @@ runs:
       elif [[ "${{ inputs.ORIGIN }}" == "hotfix" ]]; then
         gh release create ${{ inputs.TAG }} --title "Hotfix ${{ inputs.TAG }}" --notes "Hotfix ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
       fi
+    shell: bash
+
+  - name: Exportando Summary
+    run: |
+      echo "### Image tag :framed_picture:" >> $GITHUB_STEP_SUMMARY
+      echo "$GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
     shell: bash
