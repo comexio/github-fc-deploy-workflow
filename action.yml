@@ -168,8 +168,9 @@ runs:
     if: ${{ inputs.DEPLOY_FILES != '' }}
     run: |
       mkdir -p /tmp/deploy
-      for file in ${{ inputs.DEPLOY_FILES }}; do
-        cp $file /tmp/deploy/
+      echo '${{ inputs.DEPLOY_FILES }}' | jq -r '.[]' | while read file; do
+        echo "Copiando $file para /tmp/deploy/"
+        cp "$file" /tmp/deploy/
       done
       tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/.
     shell: bash
