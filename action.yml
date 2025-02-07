@@ -70,6 +70,9 @@ inputs:
   TAG:
     required: false
     description: Tag da release no GitHub
+  SECRET_MANAGER_KEY:
+    required: false
+    description: Key do secret manager
 
 runs:
   using: "composite"
@@ -81,10 +84,22 @@ runs:
       aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
       aws-region: ${{ inputs.AWS_REGION }}
 
-  - name: Baixando e descriptografando arquivo .env (se aplicável)
-    if: ${{ inputs.AWS_S3_BUCKET != '' && inputs.ENV_FILE_PATH != '' && inputs.ENV_ENCRYPTION_PASSWORD != '' }}
+  - name: Baixando arquivo .env (se aplicável)
+    if: ${{ inputs.AWS_S3_ENVFILES_BUCKET != '' && inputs.ENV_FILE_PATH != '' }}
     run: |
-      aws s3 cp s3://${{ inputs.AWS_S3_BUCKET }}/${{ inputs.ENV_FILE_PATH }} /tmp/env.gpg
+      aws s3 cp s3://${{ inputs.AWS_S3_ENVFILES_BUCKET }}/${{ inputs.ENV_FILE_PATH }} /tmp/env
+    shell: bash
+
+  - name: Obtendo secret do Secret Manager
+    uses: t-botz/aws-secrets-manager-read-action@45282af736fa0ae7e0559ed105b42538344cb864
+    with:
+      secret-id: ${{ inputs.SECRET_MANAGER_KEY }}
+      mask-json-values: true
+      append-to-env-file: /tmp/env
+
+  - name: Obtendo secret do Secret Manager (se aplicável)
+    if: ${{ inputs.ENV_ENCRYPTION_PASSWORD != '' }}
+    run: |
       gpg -d --batch --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env.gpg > .env
     shell: bash
 
