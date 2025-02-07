@@ -105,14 +105,14 @@ runs:
       gpg -c --batch --cipher-algo AES256 --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env
     shell: bash
 
-  - name: Ajustando o env de migrations
-    run: |
-      cp .env .env.migrate
-      sed -i "s/DB_USERNAME=.*//" .env.migrate
-      sed -i "s/DB_PASSWORD=.*//" .env.migrate
-      sed -i "s/DB_MIGRATION_USERNAME/DB_USERNAME/" .env.migrate
-      sed -i "s/DB_MIGRATION_PASSWORD/DB_PASSWORD/" .env.migrate
-    shell: bash
+  # - name: Ajustando o env de migrations
+  #   run: |
+  #     cp .env .env.migrate
+  #     sed -i "s/DB_USERNAME=.*//" .env.migrate
+  #     sed -i "s/DB_PASSWORD=.*//" .env.migrate
+  #     sed -i "s/DB_MIGRATION_USERNAME/DB_USERNAME/" .env.migrate
+  #     sed -i "s/DB_MIGRATION_PASSWORD/DB_PASSWORD/" .env.migrate
+  #   shell: bash
 
   # ##################  PUBLISH IMAGE # ##################
 
