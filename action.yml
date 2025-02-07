@@ -91,16 +91,40 @@ runs:
     shell: bash
 
   - name: Obtendo secret do Secret Manager
+    if: ${{ inputs.SECRET_MANAGER_KEY != '' }}
     uses: t-botz/aws-secrets-manager-read-action@45282af736fa0ae7e0559ed105b42538344cb864
     with:
       secret-id: ${{ inputs.SECRET_MANAGER_KEY }}
       mask-json-values: true
       append-to-env-file: /tmp/env
 
-  - name: Obtendo secret do Secret Manager (se aplicável)
+  - name: Criptografando arquivo env com senha
     if: ${{ inputs.ENV_ENCRYPTION_PASSWORD != '' }}
     run: |
-      gpg -d --batch --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env.gpg > .env
+      # gpg -d --batch --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env.gpg > .env
+      gpg -c --batch --cipher-algo AES256 --passphrase "${{ secrets.ENV_ENCRYPTION_PASSWORD }}" /tmp/env
+    shell: bash
+
+  - name: Ajustando o env de migrations
+    run: |
+      cp .env .env.migrate
+      sed -i "s/DB_USERNAME=.*//" .env.migrate
+      sed -i "s/DB_PASSWORD=.*//" .env.migrate
+      sed -i "s/DB_MIGRATION_USERNAME/DB_USERNAME/" .env.migrate
+      sed -i "s/DB_MIGRATION_PASSWORD/DB_PASSWORD/" .env.migrate
+    shell: bash
+
+  # ##################  PUBLISH IMAGE # ##################
+
+  - name: Adicionando Github Token ao Composer
+    run: |
+      cat <<-EOF > auth.json
+      {
+          "github-oauth": {
+              "github.com": "${{ inputs.GITHUB_TOKEN }}"
+          }
+      }
+      EOF
     shell: bash
 
   - name: Autenticando no ECR (se aplicável)
@@ -128,6 +152,14 @@ runs:
       build-args: |
         IMAGE=${{ inputs.BASE_IMAGE }}
 
+  - name: Exportando Summary
+    run: |
+      echo "### Image tag :framed_picture:" >> $GITHUB_STEP_SUMMARY
+      echo "$GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
+    shell: bash
+
+  # ##################  DEPLOY IMAGE # ##################
+
   - name: Criando e Armazenando Artefato de Deploy (se aplicável)
     if: ${{ inputs.DEPLOY_FILES != '' }}
     run: |
@@ -138,46 +170,84 @@ runs:
       tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/.
     shell: bash
 
+  - name: Armazenando arquivo de Deploy
+    uses: actions/upload-artifact@v4
+    with:
+      name: deploy
+      path: /tmp/deploy.tar.gz
+      if-no-files-found: error
+      retention-days: 1
+
   - name: Executando Deploy nos Servidores EC2 (se aplicável)
     if: ${{ inputs.SERVER_LIST != '' }}
     run: |
+      echo "Iniciando deploy nos servidores..."
+
+      # Configuração da VPN (se necessário)
+      if [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]]; then
+        echo "Instalando OpenVPN e conectando à VPN..."
+        sudo apt-get update && sudo apt-get install -y openvpn
+        
+        echo "${{ inputs.OVPN_CERT_PASS }}" > vpn_pass.txt
+        echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
+        for server in $(echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]'); do
+          IP=$(echo $server | jq -r '.ip')
+          echo "route $IP 255.255.255.255" >> cicd.ovpn
+        done
+        echo "route-nopull" >> cicd.ovpn
+
+        sudo openvpn --config cicd.ovpn --askpass vpn_pass.txt --daemon
+        sleep 5
+
+        # Verificação da VPN
+        if [[ $(ip address | grep -o " tun" | wc -l) -eq 0 ]]; then
+          echo "::error::Interface da VPN não encontrada!"
+          exit 1
+        fi
+      fi
+
+      # Criando chave SSH
+      echo "Salvando chave SSH..."
+      echo "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
+      chmod 600 ssh_key.pem
+
+      # Loop para cada servidor
       for server in $(echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]'); do
         NAME=$(echo $server | jq -r '.name')
         IP=$(echo $server | jq -r '.ip')
 
         echo "Deploy para: $NAME ($IP)"
 
-        if [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]]; then
-          echo "Instalando OpenVPN e conectando à VPN..."
-          sudo apt-get update && sudo apt-get install -y openvpn
-          
-          echo "${{ inputs.OVPN_CERT_PASS }}" > vpn_pass.txt
-          echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
-          for server in $(echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]'); do
-            IP=$(echo $server | jq -r '.ip')
-            echo "route $IP 255.255.255.255" >> cicd.ovpn
-          done
-          echo "route-nopull" >> cicd.ovpn
-          sudo openvpn --config cicd.ovpn --askpass vpn_pass.txt --daemon
-          sleep 5
-        fi
+        set -e  # Para garantir que qualquer erro interrompa a execução
 
-        echo "Salvando chave SSH"
-        echo "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
-        chmod 600 ssh_key.pem
-
-        echo "Enviando e executando deploy no servidor"
+        echo "Enviando arquivo de deploy para o servidor..."
         scp -o StrictHostKeyChecking=no -i ssh_key.pem /tmp/deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/
+
+        echo "Executando comandos remotos..."
         ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP <<EOF
+          set -e
+          echo "Extraindo arquivo de Deploy..."
           tar -xzf /tmp/deploy.tar.gz -C /tmp/
+
+          echo "Carregando o GITHUB_COMMIT no env..."
           export GITHUB_COMMIT="${{ inputs.GITHUB_COMMIT }}"
+
+          echo "Executando script de Deploy..."
           bash /tmp/deploy/up.sh
+
+          echo "Removendo arquivos temporários..."
           rm -rf /tmp/deploy /tmp/deploy.tar.gz
         EOF
 
-        echo "Encerrando VPN (se aplicável)"
-        [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]] && sudo killall openvpn
+        echo "Deploy concluído para: $NAME ($IP)"
       done
+
+      # Encerrando VPN (se aplicável)
+      if [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]]; then
+        echo "Encerrando VPN..."
+        sudo killall openvpn
+        sleep 5
+      fi
     shell: bash
 
   - name: Criando Release no GitHub após Deploy
@@ -191,10 +261,4 @@ runs:
       elif [[ "${{ inputs.ORIGIN }}" == "hotfix" ]]; then
         gh release create ${{ inputs.TAG }} --title "Hotfix ${{ inputs.TAG }}" --notes "Hotfix ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
       fi
-    shell: bash
-
-  - name: Exportando Summary
-    run: |
-      echo "### Image tag :framed_picture:" >> $GITHUB_STEP_SUMMARY
-      echo "$GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
     shell: bash
