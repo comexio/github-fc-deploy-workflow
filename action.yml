@@ -102,7 +102,7 @@ runs:
     if: ${{ inputs.ENV_ENCRYPTION_PASSWORD != '' }}
     run: |
       # gpg -d --batch --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env.gpg > .env
-      gpg -c --batch --cipher-algo AES256 --passphrase "${{ secrets.ENV_ENCRYPTION_PASSWORD }}" /tmp/env
+      gpg -c --batch --cipher-algo AES256 --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env
     shell: bash
 
   - name: Ajustando o env de migrations
