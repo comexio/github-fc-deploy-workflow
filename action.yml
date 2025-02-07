@@ -116,6 +116,9 @@ runs:
 
   # ##################  PUBLISH IMAGE # ##################
 
+  - name: Baixando código do repositório
+    uses: actions/checkout@v4
+
   - name: Adicionando Github Token ao Composer
     run: |
       cat <<-EOF > auth.json
