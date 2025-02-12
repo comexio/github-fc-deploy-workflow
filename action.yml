@@ -217,7 +217,9 @@ runs:
       fi
 
       echo "Salvando chave SSH..."
-      printf '%s' "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
+      cat <<EOF > ssh_key.pem
+      ${{ inputs.SSH_KEY_FILE }}
+      EOF
       chmod 600 ssh_key.pem
 
       # Loop para cada servidor
