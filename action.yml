@@ -76,6 +76,11 @@ inputs:
 
 runs:
   using: "composite"
+  strategy:
+    max-parallel: 200 # Pode alterar para 1 para rodar um por vez
+    fail-fast: false # Continua rodando mesmo se algum falhar
+    matrix:
+      servers: ${{ fromJson(inputs.SERVER_LIST) }}
   steps:
   - name: Configurando credenciais da AWS
     uses: aws-actions/configure-aws-credentials@v4
@@ -186,77 +191,85 @@ runs:
       if-no-files-found: error
       retention-days: 1
 
-  - name: Executando Deploy nos Servidores EC2 (se aplicável)
-    if: ${{ inputs.SERVER_LIST != '' }}
+  - name: Instalando OpenVPN
     run: |
-      echo "Iniciando deploy nos servidores..."
+      sudo apt-get update
+      sudo apt-get install -y openvpn
+    shell: bash
 
-      # Configuração da VPN (se necessário)
-      if [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]]; then
-        echo "Instalando OpenVPN e conectando à VPN..."
-        sudo apt-get update && sudo apt-get install -y openvpn
-        
-        echo "${{ inputs.OVPN_CERT_PASS }}" > vpn_pass.txt
-        echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
-        
-        echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]' | while IFS= read -r server; do
-          IP=$(echo "$server" | jq -r '.ip')
-          echo "route $IP 255.255.255.255" >> cicd.ovpn
-        done
-        
-        echo "route-nopull" >> cicd.ovpn
+  - name: Configurando a VPN
+    run: |
+      echo "${{ inputs.OVPN_CERT_PASS }}" > vpn_pass.txt
+      echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
+      echo "route ${{ matrix.servers.ip }} 255.255.255.255" >> cicd.ovpn
+      echo "route-nopull" >> cicd.ovpn
+    shell: bash
 
-        sudo openvpn --config cicd.ovpn --askpass vpn_pass.txt --daemon
-        sleep 5
+  - name: Conectando ao servidor VPN
+    run: sudo openvpn --config cicd.ovpn --askpass vpn_pass.txt --daemon
+    shell: bash
 
-        # Verificação da VPN
-        if [[ $(ip address | grep -o " tun" | wc -l) -eq 0 ]]; then
-          echo "::error::Interface da VPN não encontrada!"
-          exit 1
-        fi
+  - name: Aguardando a VPN conectar
+    run: sleep 5
+    shell: bash
+
+  - name: Verificando a conexão VPN
+    run: |
+      if ! ip address | grep -q " tun"; then
+        echo "::error::Interface da VPN não encontrada!"
+        exit 1
       fi
+    shell: bash
 
-      echo "Salvando chave SSH..."
-      mkdir -p ~/.ssh
+  - name: Salvando chave SSH
+    run: |
       echo "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
+      chmod 600 ssh_key.pem
+    shell: bash
 
-      # Loop para cada servidor
-      for server in $(echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]'); do
-        NAME=$(echo $server | jq -r '.name')
-        IP=$(echo $server | jq -r '.ip')
+  - name: Baixando artefato de Deploy
+    uses: actions/download-artifact@v4
+    with:
+      name: deploy
 
-        echo "Deploy para: $NAME ($IP)"
+  - name: Copiando o arquivo de Deploy para o servidor
+    uses: appleboy/scp-action@2ce642f289702dc78338c4d35466f89ecfee375c
+    with:
+      host: ${{ matrix.servers.ip }}
+      username: ${{ inputs.SSH_USER }}
+      key_path: ssh_key.pem
+      source: deploy.tar.gz
+      target: /tmp/
+      overwrite: true
 
-        set -e  # Para garantir que qualquer erro interrompa a execução
+  - name: Executando os comandos remotos
+    uses: appleboy/ssh-action@dce9d565de8d876c11d93fa4fe677c0285a66d78
+    with:
+      host: ${{ matrix.servers.ip }}
+      username: ${{ inputs.SSH_USER }}
+      key_path: ssh_key.pem
+      sync: false # Mantém o fluxo mesmo em caso de erro
+      timeout: 20s
+      command_timeout: 60m
+      script_stop: true
+      script: |
+        echo "Extraindo arquivo de Deploy"
+        tar -xzf /tmp/deploy.tar.gz -C /tmp/
 
-        echo "Enviando arquivo de deploy para o servidor..."
-        scp -o StrictHostKeyChecking=no -i ssh_key.pem /tmp/deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/
+        echo "Carregando o GITHUB_COMMIT no env do terminal"
+        export GITHUB_COMMIT="${{ inputs.GITHUB_COMMIT }}"
 
-        echo "Executando comandos remotos..."
-        ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP <<EOF
-          set -e
-          echo "Extraindo arquivo de Deploy..."
-          tar -xzf /tmp/deploy.tar.gz -C /tmp/
+        echo "Executando script de Deploy"
+        bash /tmp/deploy/up.sh
 
-          echo "Carregando o GITHUB_COMMIT no env..."
-          export GITHUB_COMMIT="${{ inputs.GITHUB_COMMIT }}"
+        echo "Deletando arquivos de Deploy"
+        rm -rf /tmp/deploy /tmp/deploy.tar.gz
 
-          echo "Executando script de Deploy..."
-          bash /tmp/deploy/up.sh
-
-          echo "Removendo arquivos temporários..."
-          rm -rf /tmp/deploy /tmp/deploy.tar.gz
-        EOF
-
-        echo "Deploy concluído para: $NAME ($IP)"
-      done
-
-      # Encerrando VPN (se aplicável)
-      if [[ -n "${{ inputs.OVPN_CONFIG_FILE }}" ]]; then
-        echo "Encerrando VPN..."
-        sudo killall openvpn
-        sleep 5
-      fi
+  - name: Encerrando a VPN
+    if: always()
+    run: |
+      sudo killall openvpn
+      sleep 5
     shell: bash
 
   - name: Criando Release no GitHub após Deploy
