@@ -36,13 +36,6 @@ inputs:
   DEPLOY_FILES:
     required: false
     description: Lista de arquivos a serem empacotados para deploy
-  ARTIFACT_NAME:
-    required: false
-    description: Nome do artefato de deploy
-  RETENTION_DAYS:
-    required: false
-    description: Dias de retenção do artefato
-    default: "1"
   SERVER_LIST:
     required: false
     description: Lista de servidores para deploy (JSON)
@@ -58,18 +51,12 @@ inputs:
   OVPN_CERT_PASS:
     required: false
     description: Senha do OpenVPN (se necessário)
-  GITHUB_COMMIT:
-    required: false
-    description: Commit/tag para deploy
   ORIGIN:
     required: false
     description: Origem da release (fc, hotfix, etc.)
   GITHUB_TOKEN:
     required: false
     description: Token do GitHub para criar a release
-  TAG:
-    required: false
-    description: Tag da release no GitHub
   SECRET_MANAGER_KEY:
     required: false
     description: Key do secret manager
@@ -77,6 +64,7 @@ inputs:
 runs:
   using: "composite"
   steps:
+  ## STEP PARA BUSCAR A TAG - ESTARA NO GITHUB COMO PRE-RELEASE
   - name: Configurando credenciais da AWS
     uses: aws-actions/configure-aws-credentials@v4
     with:
@@ -136,6 +124,7 @@ runs:
     with:
       registry: ${{ inputs.ECR_REGISTRY }}
 
+  ## TAGEAR A IMAGEM COM A TAG PRERELEASE QUE BUSCAMOS DO GITHUB
   - name: Gerando Tags e Labels para usar na imagem
     id: meta
     uses: docker/metadata-action@v4
@@ -284,16 +273,4 @@ runs:
       echo "Desconectando VPN..."
       sudo killall openvpn
       sleep 5
-
-  - name: Criando Release no GitHub após Deploy
-    if: ${{ inputs.ORIGIN != '' && inputs.GITHUB_TOKEN != '' && inputs.TAG != '' }}
-    env:
-      GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
-    run: |
-      gh auth status || exit 1
-      if [[ "${{ inputs.ORIGIN }}" == "fc" ]]; then
-        gh release create ${{ inputs.TAG }} --title "Release ${{ inputs.TAG }}" --notes "Release ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
-      elif [[ "${{ inputs.ORIGIN }}" == "hotfix" ]]; then
-        gh release create ${{ inputs.TAG }} --title "Hotfix ${{ inputs.TAG }}" --notes "Hotfix ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
-      fi
-    shell: bash
+  ## CRIAR STEP PARA SETAR A RELASE COMO LATEST, TIRAR DO PRERELEASE
