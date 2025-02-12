@@ -75,7 +75,7 @@ runs:
       RESPONSE=$(curl -s -H "Authorization: token ${{ inputs.GITHUB_TOKEN }}" \
         "https://api.github.com/repos/${{ github.repository }}/releases")
 
-      TAG=$(echo "$RESPONSE" | jq -r '[.[] | select(.prerelease == true)] | first | .tag_name')
+      TAG=$(echo "$RESPONSE" | jq -r '[.[] | select(.isPrerelease == true)] | first | .tag_name')
 
       if [[ -z "$TAG" || "$TAG" == "null" ]]; then
         echo "::error::Nenhuma pre-release encontrada!"
