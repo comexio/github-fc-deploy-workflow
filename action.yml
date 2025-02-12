@@ -167,14 +167,13 @@ runs:
   - name: Criando e Armazenando Artefato de Deploy (se aplicável)
     if: ${{ inputs.DEPLOY_FILES != '' }}
     run: |
-      pwd
-      ls -lah
       mkdir -p /tmp/deploy
+      set -f
 
-      while IFS= read -r file; do
+      for file in ${{ inputs.DEPLOY_FILES }}; do
         echo "Copiando $file para /tmp/deploy/"
         cp "$file" /tmp/deploy/ || { echo "Erro ao copiar $file"; exit 1; }
-      done <<< "${{ inputs.DEPLOY_FILES }}"
+      done
 
       tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/
     shell: bash
