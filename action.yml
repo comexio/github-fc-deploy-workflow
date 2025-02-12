@@ -167,6 +167,8 @@ runs:
   - name: Criando e Armazenando Artefato de Deploy (se aplicável)
     if: ${{ inputs.DEPLOY_FILES != '' }}
     run: |
+      pwd
+      ls -lah
       mkdir -p /tmp/deploy
 
       while IFS= read -r file; do
