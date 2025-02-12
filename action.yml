@@ -169,11 +169,10 @@ runs:
     run: |
       mkdir -p /tmp/deploy
 
-      # Percorre cada arquivo da variável sem depender do jq
-      for file in ${{ inputs.DEPLOY_FILES }}; do
+      while IFS= read -r file; do
         echo "Copiando $file para /tmp/deploy/"
         cp "$file" /tmp/deploy/ || { echo "Erro ao copiar $file"; exit 1; }
-      done
+      done <<< "${{ inputs.DEPLOY_FILES }}"
 
       tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/
     shell: bash
