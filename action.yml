@@ -168,11 +168,21 @@ runs:
     if: ${{ inputs.DEPLOY_FILES != '' }}
     run: |
       mkdir -p /tmp/deploy
-      echo '${{ inputs.DEPLOY_FILES }}' | jq -c -r '.[]' | while IFS= read -r file; do
+
+      # Removendo aspas extras e validando JSON antes de processar
+      FILES=$(echo '${{ inputs.DEPLOY_FILES }}' | jq -c -r '.[]' || echo "")
+
+      if [[ -z "$FILES" ]]; then
+        echo "Nenhum arquivo a copiar."
+        exit 0
+      fi
+
+      echo "$FILES" | while IFS= read -r file; do
         echo "Copiando $file para /tmp/deploy/"
-        cp "$file" /tmp/deploy/
+        cp "$file" /tmp/deploy/ || { echo "Erro ao copiar $file"; exit 1; }
       done
-      tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/.
+
+      tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/
     shell: bash
 
   - name: Armazenando arquivo de Deploy
