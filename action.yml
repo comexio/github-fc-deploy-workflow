@@ -198,10 +198,12 @@ runs:
         
         echo "${{ inputs.OVPN_CERT_PASS }}" > vpn_pass.txt
         echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
-        for server in $(echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]'); do
-          IP=$(echo $server | jq -r '.ip')
+        
+        echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]' | while IFS= read -r server; do
+          IP=$(echo "$server" | jq -r '.ip')
           echo "route $IP 255.255.255.255" >> cicd.ovpn
         done
+        
         echo "route-nopull" >> cicd.ovpn
 
         sudo openvpn --config cicd.ovpn --askpass vpn_pass.txt --daemon
