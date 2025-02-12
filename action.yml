@@ -188,6 +188,7 @@ runs:
 
   - name: Buscando IPs das EC2 com nome específico
     id: find-ec2
+    shell: bash
     run: |
       echo "Buscando instâncias EC2 com nome contendo ${{ inputs.SERVER_LIST }} ..."
 
@@ -214,7 +215,12 @@ runs:
 
       # Exporta os IPs para serem usados nos próximos steps
       echo "EC2_IPS=$(echo "$IP_ADDRESSES" | tr '\n' ' ')" >> $GITHUB_ENV
+
+  - name: Instalando OpenVPN
     shell: bash
+    run: |
+      sudo apt-get update
+      sudo apt-get install openvpn -y
 
   - name: Configurando a VPN (se necessário)
     if: ${{ inputs.OVPN_CONFIG_FILE != '' }}
