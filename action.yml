@@ -216,9 +216,8 @@ runs:
         fi
       fi
 
-      # Criando chave SSH
       echo "Salvando chave SSH..."
-      echo "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
+      printf '%s' "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
       chmod 600 ssh_key.pem
 
       # Loop para cada servidor
