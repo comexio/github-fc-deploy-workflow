@@ -264,19 +264,43 @@ runs:
         scp -o StrictHostKeyChecking=no -i ssh_key.pem deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/
       done
 
-  - name: Executando comandos remotos nas instâncias EC2
-    shell: bash
-    run: |
-      for IP in $EC2_IPS; do
-        echo "Executando comandos em $IP..."
-        ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP << 'EOF'
-            set -e
-            tar -xzf /tmp/deploy.tar.gz -C /tmp/
-            export GITHUB_COMMIT=$GITHUB_STEP_SUMMARY
-            bash /tmp/deploy/up.sh
-            rm -rf /tmp/deploy /tmp/deploy.tar.gz
-          EOF
-      done
+  # - name: Executando comandos remotos nas instâncias EC2
+  #   shell: bash
+  #   run: |
+  #     for IP in $EC2_IPS; do
+  #       echo "Executando comandos em $IP..."
+  #       ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP << 'EOF'
+  #           set -e
+  #           tar -xzf /tmp/deploy.tar.gz -C /tmp/
+  #           export GITHUB_COMMIT=$GITHUB_STEP_SUMMARY
+  #           bash /tmp/deploy/up.sh
+  #           rm -rf /tmp/deploy /tmp/deploy.tar.gz
+  #         EOF
+  #     done
+
+  - name: Executando os comandos
+    uses: appleboy/ssh-action@dce9d565de8d876c11d93fa4fe677c0285a66d78
+    with:
+      host: $EC2_IPS
+      username: ${{ inputs.SSH_USER }}
+      key_path: ssh_key.pem
+      sync: false # True causa problemas em caso de erro em algum comando
+      timeout: 20s
+      command_timeout: 60m
+      script_stop: true
+      script: |
+        echo "Extraindo arquivo de Deploy"
+        tar -xzf /tmp/deploy.tar.gz -C /tmp/
+
+        echo "Carregando o GITHUB_COMMIT no env do terminal"
+        export GITHUB_COMMIT="$GITHUB_STEP_SUMMARY"
+
+        echo "Executando script de Deploy"
+        bash /tmp/deploy/up.sh
+
+        echo "Deletando arquivos de Deploy"
+        rm -rf /tmp/deploy
+        rm -rf /tmp/deploy.tar.gz
 
   - name: Encerrando a VPN (se aplicável)
     if: always() && inputs.OVPN_CONFIG_FILE != ''
