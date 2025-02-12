@@ -186,11 +186,35 @@ runs:
       if-no-files-found: error
       retention-days: 1
 
-  - name: Instalando dependências
-    shell: bash
+  - name: Buscando IPs das EC2 com nome específico
+    id: find-ec2
     run: |
-      sudo apt-get update
-      sudo apt-get install -y openvpn jq
+      echo "Buscando instâncias EC2 com nome contendo ${{ inputs.SERVER_LIST }} ..."
+
+      INSTANCE_INFO=$(aws ec2 describe-instances \
+        --region ${{ inputs.AWS_REGION }} \
+        --filters "Name=tag:Name,Values=*${{ inputs.SERVER_LIST }}*" "Name=instance-state-name,Values=running" \
+        --query "Reservations[].Instances[].{InstanceId:InstanceId,PublicIpAddress:PublicIpAddress}" \
+        --output json)
+
+      echo "Dados das instâncias encontradas: $INSTANCE_INFO"
+
+      INSTANCE_IDS=$(echo "$INSTANCE_INFO" | jq -r '.[] | .InstanceId')
+      IP_ADDRESSES=$(echo "$INSTANCE_INFO" | jq -r '.[] | .PublicIpAddress' | grep -v null)
+
+      if [[ -z "$IP_ADDRESSES" ]]; then
+        echo "::error::Nenhuma instância ativa com IP público encontrada."
+        exit 1
+      fi
+
+      echo "Instâncias encontradas:"
+      echo "$INSTANCE_IDS"
+      echo "IPs encontrados:"
+      echo "$IP_ADDRESSES"
+
+      # Exporta os IPs para serem usados nos próximos steps
+      echo "EC2_IPS=$(echo "$IP_ADDRESSES" | tr '\n' ' ')" >> $GITHUB_ENV
+    shell: bash
 
   - name: Configurando a VPN (se necessário)
     if: ${{ inputs.OVPN_CONFIG_FILE != '' }}
@@ -200,8 +224,7 @@ runs:
       echo "${{ inputs.OVPN_CONFIG_FILE }}" > cicd.ovpn
 
       # Adiciona todas as rotas dos servidores no arquivo de configuração
-      echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]' | while IFS= read -r server; do
-        IP=$(echo "$server" | jq -r '.ip')
+      for IP in $EC2_IPS; do
         echo "route $IP 255.255.255.255" >> cicd.ovpn
       done
 
@@ -227,38 +250,26 @@ runs:
     with:
       name: deploy
 
-  - name: Processando Servidores
+  - name: Copiando o arquivo de Deploy para as instâncias EC2
     shell: bash
     run: |
-      echo '${{ inputs.SERVER_LIST }}' | jq -c '.[]' | while IFS= read -r server; do
-        NAME=$(echo "$server" | jq -r '.name')
-        IP=$(echo "$server" | jq -r '.ip')
-
-        echo "=============================="
-        echo "Iniciando deploy para: $NAME ($IP)"
-        echo "=============================="
-
-        echo "Copiando artefato para o servidor..."
+      for IP in $EC2_IPS; do
+        echo "Copiando para $IP..."
         scp -o StrictHostKeyChecking=no -i ssh_key.pem deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/
+      done
 
-        echo "Executando comandos remotos no servidor..."
+  - name: Executando comandos remotos nas instâncias EC2
+    shell: bash
+    run: |
+      for IP in $EC2_IPS; do
+        echo "Executando comandos em $IP..."
         ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP <<EOF
           set -e
-          echo "Extraindo arquivo de Deploy..."
           tar -xzf /tmp/deploy.tar.gz -C /tmp/
-
-          echo "Carregando variável GITHUB_COMMIT..."
           export GITHUB_COMMIT="${{ inputs.GITHUB_COMMIT }}"
-
-          echo "Executando script de Deploy..."
           bash /tmp/deploy/up.sh
-
-          echo "Removendo arquivos temporários..."
           rm -rf /tmp/deploy /tmp/deploy.tar.gz
         EOF
-
-        echo "Deploy concluído para: $NAME ($IP)"
-        echo "=============================="
       done
 
   - name: Encerrando a VPN (se aplicável)
@@ -268,16 +279,15 @@ runs:
       echo "Desconectando VPN..."
       sudo killall openvpn
       sleep 5
-
-  - name: Criando Release no GitHub após Deploy
-    if: ${{ inputs.ORIGIN != '' && inputs.GITHUB_TOKEN != '' && inputs.TAG != '' }}
-    env:
-      GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
-    run: |
-      gh auth status || exit 1
-      if [[ "${{ inputs.ORIGIN }}" == "fc" ]]; then
-        gh release create ${{ inputs.TAG }} --title "Release ${{ inputs.TAG }}" --notes "Release ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
-      elif [[ "${{ inputs.ORIGIN }}" == "hotfix" ]]; then
-        gh release create ${{ inputs.TAG }} --title "Hotfix ${{ inputs.TAG }}" --notes "Hotfix ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
-      fi
-    shell: bash
+  # - name: Criando Release no GitHub após Deploy
+  #   if: ${{ inputs.ORIGIN != '' && inputs.GITHUB_TOKEN != '' && inputs.TAG != '' }}
+  #   env:
+  #     GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+  #   run: |
+  #     gh auth status || exit 1
+  #     if [[ "${{ inputs.ORIGIN }}" == "fc" ]]; then
+  #       gh release create ${{ inputs.TAG }} --title "Release ${{ inputs.TAG }}" --notes "Release ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
+  #     elif [[ "${{ inputs.ORIGIN }}" == "hotfix" ]]; then
+  #       gh release create ${{ inputs.TAG }} --title "Hotfix ${{ inputs.TAG }}" --notes "Hotfix ${{ inputs.TAG }}\nCommit: $GITHUB_COMMIT" --prerelease
+  #     fi
+  #   shell: bash
