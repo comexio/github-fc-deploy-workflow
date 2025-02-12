@@ -71,7 +71,7 @@ runs:
       echo "Buscando a última pre-release..."
 
       # Obtendo a última release em pré-release do repositório
-      TAG=$(gh release list --limit 1 --json tagName,prerelease --jq '.[] | select(.prerelease) | .tagName')
+      TAG=$(gh release list --limit 1 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName')
 
       if [[ -z "$TAG" ]]; then
         echo "::error::Nenhuma pre-release encontrada!"
