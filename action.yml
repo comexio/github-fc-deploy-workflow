@@ -269,13 +269,13 @@ runs:
     run: |
       for IP in $EC2_IPS; do
         echo "Executando comandos em $IP..."
-        ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP <<EOF
-          set -e
-          tar -xzf /tmp/deploy.tar.gz -C /tmp/
-          export GITHUB_COMMIT="${{ inputs.GITHUB_COMMIT }}"
-          bash /tmp/deploy/up.sh
-          rm -rf /tmp/deploy /tmp/deploy.tar.gz
-        EOF
+        ssh -o StrictHostKeyChecking=no -i ssh_key.pem ${{ inputs.SSH_USER }}@$IP << 'EOF'
+            set -e
+            tar -xzf /tmp/deploy.tar.gz -C /tmp/
+            export GITHUB_COMMIT=$GITHUB_STEP_SUMMARY
+            bash /tmp/deploy/up.sh
+            rm -rf /tmp/deploy /tmp/deploy.tar.gz
+          EOF
       done
 
   - name: Encerrando a VPN (se aplicável)
