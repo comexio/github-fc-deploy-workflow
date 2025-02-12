@@ -64,7 +64,27 @@ inputs:
 runs:
   using: "composite"
   steps:
-  ## STEP PARA BUSCAR A TAG - ESTARA NO GITHUB COMO PRE-RELEASE
+  - name: Buscando Última Pre-Release do GitHub
+    id: find-pre-release
+    shell: bash
+    run: |
+      echo "Buscando a última pre-release..."
+
+      # Obtendo a última release em pré-release do repositório
+      TAG=$(gh release list --limit 1 --json tagName,prerelease --jq '.[] | select(.prerelease) | .tagName')
+
+      if [[ -z "$TAG" ]]; then
+        echo "::error::Nenhuma pre-release encontrada!"
+        exit 1
+      fi
+
+      echo "Tag encontrada: $TAG"
+
+      # Definindo a tag como variável de ambiente
+      echo "TAG=$TAG" >> $GITHUB_ENV
+    env:
+      GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+
   - name: Configurando credenciais da AWS
     uses: aws-actions/configure-aws-credentials@v4
     with:
@@ -131,7 +151,11 @@ runs:
     with:
       images: ${{ inputs.ECR_REGISTRY }}/${{ inputs.IMAGE_NAME }}
       flavor: latest=true
-      tags: type=sha,format=long,prefix=
+      tags: |
+        type=raw,value=${{ env.TAG }}
+        type=sha,format=long,prefix=
+      labels: |
+        org.opencontainers.image.version=${{ env.TAG }}
 
   - name: Build e Push da Imagem Docker (se aplicável)
     if: ${{ inputs.DOCKERFILE_PATH != '' }}
@@ -139,7 +163,10 @@ runs:
     with:
       context: .
       file: ${{ inputs.DOCKERFILE_PATH }}
-      tags: ${{ steps.meta.outputs.tags }}
+      # tags: ${{ steps.meta.outputs.tags }}
+      tags: |
+        ${{ inputs.ECR_REGISTRY }}/${{ inputs.IMAGE_NAME }}:${{ env.TAG }}
+        ${{ steps.meta.outputs.tags }}
       labels: ${{ steps.meta.outputs.labels }}
       push: true
       build-args: |
@@ -148,7 +175,8 @@ runs:
   - name: Exportando Summary
     run: |
       echo "### Image tag :framed_picture:" >> $GITHUB_STEP_SUMMARY
-      echo "$GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
+      # echo "$GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
+      echo "${{ env.TAG }}" >> $GITHUB_STEP_SUMMARY
     shell: bash
 
   # ##################  DEPLOY IMAGE # ##################
@@ -262,7 +290,8 @@ runs:
       script: |
         set -e
         tar -xzf /tmp/deploy.tar.gz -C /tmp/
-        export GITHUB_COMMIT=${{ github.sha }}
+        # export GITHUB_COMMIT=${{ github.sha }}
+        export GITHUB_COMMIT=${{ env.TAG }}
         bash /tmp/deploy/up.sh
         rm -rf /tmp/deploy /tmp/deploy.tar.gz
 
@@ -273,4 +302,12 @@ runs:
       echo "Desconectando VPN..."
       sudo killall openvpn
       sleep 5
-  ## CRIAR STEP PARA SETAR A RELASE COMO LATEST, TIRAR DO PRERELEASE
+
+  - name: Definir Release como Latest
+    shell: bash
+    run: |
+      echo "Atualizando a release ${{ env.TAG }} para remover pré-release e marcar como latest..."
+
+      gh release edit ${{ env.TAG }} --prerelease=false --latest
+    env:
+      GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
