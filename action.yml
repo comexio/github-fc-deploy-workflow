@@ -74,8 +74,8 @@ runs:
 
       TAG=$(gh release list \
         --repo ${{ github.repository }} \
-        --limit 10 --json tagName,prerelease \
-        --jq '.[] | select(.prerelease) | .tagName' | head -n 1)
+        --limit 10 --json tagName,isPrerelease \
+        --jq '.[] | select(.isPrerelease) | .tagName' | head -n 1)
 
       if [[ -z "$TAG" ]]; then
         echo "::error::Nenhuma pre-release encontrada!"
