@@ -64,6 +64,8 @@ inputs:
 runs:
   using: "composite"
   steps:
+  - name: Baixando código do repositório
+    uses: actions/checkout@v4
   - name: Buscando Última Pre-Release do GitHub
     id: find-pre-release
     shell: bash
@@ -123,9 +125,6 @@ runs:
   #   shell: bash
 
   # ##################  PUBLISH IMAGE # ##################
-
-  - name: Baixando código do repositório
-    uses: actions/checkout@v4
 
   - name: Adicionando Github Token ao Composer
     run: |
