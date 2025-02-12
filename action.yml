@@ -169,15 +169,8 @@ runs:
     run: |
       mkdir -p /tmp/deploy
 
-      # Removendo aspas extras e validando JSON antes de processar
-      FILES=$(echo '${{ inputs.DEPLOY_FILES }}' | jq -c -r '.[]' || echo "")
-
-      if [[ -z "$FILES" ]]; then
-        echo "Nenhum arquivo a copiar."
-        exit 0
-      fi
-
-      echo "$FILES" | while IFS= read -r file; do
+      # Percorre cada arquivo da variável sem depender do jq
+      for file in ${{ inputs.DEPLOY_FILES }}; do
         echo "Copiando $file para /tmp/deploy/"
         cp "$file" /tmp/deploy/ || { echo "Erro ao copiar $file"; exit 1; }
       done
