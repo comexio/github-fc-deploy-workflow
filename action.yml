@@ -217,9 +217,7 @@ runs:
       fi
 
       echo "Salvando chave SSH..."
-      cat <<EOF > ssh_key.pem
-      ${{ inputs.SSH_KEY_FILE }}
-      EOF
+      echo "${{ inputs.SSH_KEY_FILE }}" | base64 --decode > ssh_key.pem
       chmod 600 ssh_key.pem
 
       # Loop para cada servidor
