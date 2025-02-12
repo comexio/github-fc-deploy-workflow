@@ -217,7 +217,8 @@ runs:
       fi
 
       echo "Salvando chave SSH..."
-      echo "${{ inputs.SSH_KEY_FILE }}" | sed 's/\r$//' > ssh_key.pem
+      mkdir -p ~/.ssh
+      printf '%s\n' "${{ inputs.SSH_KEY_FILE }}" > ssh_key.pem
       chmod 600 ssh_key.pem
 
       # Loop para cada servidor
