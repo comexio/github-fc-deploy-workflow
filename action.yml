@@ -278,8 +278,13 @@ runs:
   #         EOF
   #     done
 
+  - name: TESTE
+    shell: bash
+    run: |
+      echo $EC2_IPS
+
   - name: Executando os comandos
-    uses: appleboy/ssh-action@dce9d565de8d876c11d93fa4fe677c0285a66d78
+    uses: appleboy/ssh-action@v1.2.0
     with:
       host: $EC2_IPS
       username: ${{ inputs.SSH_USER }}
