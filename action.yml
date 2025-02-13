@@ -69,36 +69,21 @@ runs:
 
   - name: Buscando Última Pre-Release do GitHub via API
     id: find-pre-release
+    shell: bash
     run: |
-      echo "Buscando a última pre-release do repositório ${{ github.repository }} via API..."
-
-      RESPONSE=$(curl -s -H "Authorization: Bearer ${{ inputs.GITHUB_TOKEN }}" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${{ github.repository }}/releases?per_page=10")
-
-      # Verifica se a resposta contém um erro
-      ERROR_MESSAGE=$(echo "$RESPONSE" | jq -r '.message // empty')
-
-      if [[ -n "$ERROR_MESSAGE" ]]; then
-        echo "::error::Erro ao buscar releases: $ERROR_MESSAGE"
-        exit 1
-      fi
-
-      # Filtra apenas pre-releases e pega a tag da mais recente
-      TAG=$(echo "$RESPONSE" | jq -r '[.[] | select(.prerelease == true)] | first | .tag_name')
+      TAG=$(curl -s -H "Authorization: Bearer ${{ inputs.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases?per_page=10" | \
+            jq -r '[.[] | select(.prerelease == true)] | first | .tag_name')
 
       if [[ -z "$TAG" || "$TAG" == "null" ]]; then
         echo "::error::Nenhuma pre-release encontrada!"
         exit 1
       fi
 
-      echo "Tag encontrada: $TAG"
-
-      # Definindo a tag como variável de ambiente
       echo "TAG=$TAG" >> $GITHUB_ENV
     env:
       GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
-    shell: bash
 
   - name: Configurando credenciais da AWS
     uses: aws-actions/configure-aws-credentials@v4
