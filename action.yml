@@ -51,9 +51,6 @@ inputs:
   OVPN_CERT_PASS:
     required: false
     description: Senha do OpenVPN (se necessário)
-  ORIGIN:
-    required: false
-    description: Origem da release (fc, hotfix, etc.)
   GITHUB_TOKEN:
     required: false
     description: Token do GitHub para criar a release
