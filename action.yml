@@ -306,3 +306,20 @@ runs:
       gh release edit ${{ env.TAG }} --prerelease=false --latest
     env:
       GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+
+  - name: Criar PR para main se a branch for RC
+    if: startsWith(github.ref, 'refs/heads/rc/')
+    id: create-pr
+    shell: bash
+    run: |
+      CURRENT_BRANCH=$(echo "${GITHUB_REF#refs/heads/}")
+      echo "Branch atual: $CURRENT_BRANCH"
+
+      PR_TITLE="[RC] branch $CURRENT_BRANCH to Main"
+      PR_BODY="Pull Request RC to Main"
+
+      echo "Criando PR: $PR_TITLE"
+
+      gh pr create --base="main" --head="$CURRENT_BRANCH" --title="$PR_TITLE" --body="$PR_BODY"
+    env:
+      GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
