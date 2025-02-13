@@ -298,6 +298,7 @@ runs:
       sleep 5
 
   - name: Definir Release como Latest
+    if: github.ref == 'refs/heads/main'
     shell: bash
     run: |
       echo "Atualizando a release ${{ env.TAG }} para remover pré-release e marcar como latest..."
