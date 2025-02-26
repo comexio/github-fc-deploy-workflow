@@ -277,6 +277,19 @@ runs:
         tar -xzf /tmp/deploy.tar.gz -C /tmp/
         export GITHUB_COMMIT=${{ env.TAG }}
 
+        git fetch --all
+
+        for branch in $(git branch -r | grep -v '\->' | sed 's/origin\///'); do
+          if ! git show-ref --verify --quiet refs/heads/$branch; then
+            git branch --track $branch origin/$branch
+          fi
+        done
+
+        git pull --all
+
+        echo "Trocando para a branch $GITHUB_COMMIT..."
+        git checkout $GITHUB_COMMIT
+
         # Substituir :latest pela nova tag no Dockerfile
         sed -i "s|:latest|:${GITHUB_COMMIT}|g" /tmp/deploy/Dockerfile
 
