@@ -287,12 +287,17 @@ runs:
           fi
         done
 
-        # Verifica se já está na branch correta antes de executar git pull --all
-        if git branch --show-current | grep -q "^$GITHUB_COMMIT$"; then
-          echo "Já estamos na branch $GITHUB_COMMIT. Ignorando 'git pull --all'."
+        # Verifica se já está em uma branch válida antes de executar git pull --all
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        if [[ "$CURRENT_BRANCH" != "HEAD" ]]; then
+          if [[ "$CURRENT_BRANCH" == "$GITHUB_COMMIT" ]]; then
+            echo "Já estamos na branch $GITHUB_COMMIT. Ignorando 'git pull --all'."
+          else
+            echo "Atualizando branches locais..."
+            git pull --all
+          fi
         else
-          echo "Atualizando branches locais..."
-          git pull --all
+          echo "Repositório não está em uma branch válida. Ignorando 'git pull --all'."
         fi
 
         echo "Trocando para a branch $GITHUB_COMMIT..."
