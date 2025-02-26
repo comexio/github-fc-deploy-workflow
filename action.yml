@@ -166,27 +166,27 @@ runs:
 
   # ##################  DEPLOY IMAGE # ##################
 
-  - name: Criando e Armazenando Artefato de Deploy (se aplicável)
-    if: ${{ inputs.DEPLOY_FILES != '' }}
-    run: |
-      mkdir -p /tmp/deploy
-      set -f
+  # - name: Criando e Armazenando Artefato de Deploy (se aplicável)
+  #   if: ${{ inputs.DEPLOY_FILES != '' }}
+  #   run: |
+  #     mkdir -p /tmp/deploy
+  #     set -f
 
-      for file in ${{ inputs.DEPLOY_FILES }}; do
-        echo "Copiando $file para /tmp/deploy/"
-        cp "$file" /tmp/deploy/ || { echo "Erro ao copiar $file"; exit 1; }
-      done
+  #     for file in ${{ inputs.DEPLOY_FILES }}; do
+  #       echo "Copiando $file para /tmp/deploy/"
+  #       cp "$file" /tmp/deploy/ || { echo "Erro ao copiar $file"; exit 1; }
+  #     done
 
-      tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/
-    shell: bash
+  #     tar -czf /tmp/deploy.tar.gz -C /tmp/ deploy/
+  #   shell: bash
 
-  - name: Armazenando arquivo de Deploy
-    uses: actions/upload-artifact@v4
-    with:
-      name: deploy
-      path: /tmp/deploy.tar.gz
-      if-no-files-found: error
-      retention-days: 1
+  # - name: Armazenando arquivo de Deploy
+  #   uses: actions/upload-artifact@v4
+  #   with:
+  #     name: deploy
+  #     path: /tmp/deploy.tar.gz
+  #     if-no-files-found: error
+  #     retention-days: 1
 
   - name: Buscando IPs das EC2 com nome específico
     id: find-ec2
@@ -266,7 +266,7 @@ runs:
         scp -o StrictHostKeyChecking=no -i ssh_key.pem deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/
       done
 
-  - name: Executando comandos remotos nas instâncias EC2
+  - name: Manipulando tag nova no manifestos
     uses: appleboy/ssh-action@master
     with:
       username: ${{ inputs.SSH_USER }}
@@ -275,10 +275,45 @@ runs:
       script: |
         set -e
         tar -xzf /tmp/deploy.tar.gz -C /tmp/
-        # export GITHUB_COMMIT=${{ github.sha }}
         export GITHUB_COMMIT=${{ env.TAG }}
-        bash /tmp/deploy/up.sh
-        rm -rf /tmp/deploy /tmp/deploy.tar.gz
+
+        # Substituir :latest pela nova tag no Dockerfile
+        sed -i "s|:latest|:${GITHUB_COMMIT}|g" /tmp/Dockerfile
+
+        # Mover os arquivos para o destino correto
+        mv /tmp/Dockerfile /home/ubuntu/log-os/.infra/homol/php/Dockerfile
+        mv /tmp/docker-compose.yml /home/ubuntu/log-os/.infra/homol/docker-compose.yml
+
+  - name: Subindo nova tag
+    uses: appleboy/ssh-action@master
+    with:
+      username: ${{ inputs.SSH_USER }}
+      key_path: ssh_key.pem
+      host: ${{ env.EC2_IPS }}
+      script: |
+        set -e
+        aws s3 cp "s3://logcomex-environments-files/log-os/.env.homol" "/home/ubuntu/log-os/.env"
+        cd "/home/ubuntu/log-os/.infra/homol"
+        docker-compose up -d
+        docker cp "/home/ubuntu/log-os/.env" logos-app:/var/www/.env
+
+  - name: Preparando ambiente pos new tag
+    uses: appleboy/ssh-action@master
+    with:
+      username: ${{ inputs.SSH_USER }}
+      key_path: ssh_key.pem
+      host: ${{ env.EC2_IPS }}
+      script: |
+        set -e
+        docker exec logos-app chown www-data:www-data bootstrap/cache -R
+        docker exec logos-app composer install
+        docker exec logos-reverb composer install
+        docker exec logos-supervisor composer install
+        docker exec logos-app npm install
+        docker exec logos-app npm run build
+        docker exec logos-app php artisan config:cache
+        docker exec logos-app php artisan view:cache
+        docker exec logos-app chown www-data:www-data storage -R
 
   - name: Encerrando a VPN (se aplicável)
     if: always() && inputs.OVPN_CONFIG_FILE != ''
