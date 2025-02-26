@@ -195,7 +195,7 @@ runs:
       echo "Buscando instâncias EC2 com nome contendo ${{ inputs.SERVER_LIST }} ..."
 
       INSTANCE_INFO=$(aws ec2 describe-instances \
-        --region ${{ inputs.AWS_REGION }} \
+        --region sa-east-1 \
         --filters "Name=tag:Name,Values=*${{ inputs.SERVER_LIST }}*" "Name=instance-state-name,Values=running" \
         --query "Reservations[].Instances[].{InstanceId:InstanceId,PublicIpAddress:PublicIpAddress}" \
         --output json)
