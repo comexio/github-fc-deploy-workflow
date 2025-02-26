@@ -301,10 +301,14 @@ runs:
         fi
 
         echo "Trocando para a branch $GITHUB_COMMIT..."
-        git checkout "$GITHUB_COMMIT" 2>/dev/null || git checkout "tags/$GITHUB_COMMIT" -b "$GITHUB_COMMIT" || {
-          echo "Erro: A branch ou tag '$GITHUB_COMMIT' não existe."
+
+        # Verifica se a branch existe remotamente antes de tentar fazer o checkout
+        if git ls-remote --exit-code --heads origin "$GITHUB_COMMIT" >/dev/null; then
+          git checkout "$GITHUB_COMMIT"
+        else
+          echo "Erro: A branch '$GITHUB_COMMIT' não existe remotamente."
           exit 1
-        }
+        fi
 
         # Substituir :latest pela nova tag no Dockerfile
         sed -i "s|:latest|:${GITHUB_COMMIT}|g" /tmp/deploy/Dockerfile
