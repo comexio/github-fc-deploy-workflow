@@ -294,7 +294,7 @@ runs:
         set -e
         aws s3 cp "s3://logcomex-environments-files/log-os/.env.homol" "/home/ubuntu/log-os/.env"
         cd "/home/ubuntu/log-os/.infra/homol"
-        docker-compose up -d
+        docker-compose up -d --force-recreate
         docker cp "/home/ubuntu/log-os/.env" logos-app:/var/www/.env
 
   - name: Preparando ambiente pos new tag
