@@ -87,7 +87,7 @@ runs:
     with:
       aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
       aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
-      aws-region: ${{ inputs.AWS_REGION }}
+      aws-region: sa-east-1
 
   - name: Baixando arquivo .env (se aplicável)
     if: ${{ inputs.AWS_S3_ENVFILES_BUCKET != '' && inputs.ENV_FILE_PATH != '' }}
@@ -109,15 +109,6 @@ runs:
       # gpg -d --batch --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env.gpg > .env
       gpg -c --batch --cipher-algo AES256 --passphrase "${{ inputs.ENV_ENCRYPTION_PASSWORD }}" /tmp/env
     shell: bash
-
-  # - name: Ajustando o env de migrations
-  #   run: |
-  #     cp .env .env.migrate
-  #     sed -i "s/DB_USERNAME=.*//" .env.migrate
-  #     sed -i "s/DB_PASSWORD=.*//" .env.migrate
-  #     sed -i "s/DB_MIGRATION_USERNAME/DB_USERNAME/" .env.migrate
-  #     sed -i "s/DB_MIGRATION_PASSWORD/DB_PASSWORD/" .env.migrate
-  #   shell: bash
 
   # ##################  PUBLISH IMAGE # ##################
 
