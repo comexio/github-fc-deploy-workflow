@@ -275,47 +275,29 @@ runs:
         set -e
         tar -xzf /tmp/deploy.tar.gz -C /tmp/
         export GITHUB_COMMIT=${{ env.TAG }}
+        BRANCH_NAME="rc/$GITHUB_COMMIT"
 
         cd /home/ubuntu/log-os/
 
         echo "Baixando todas as branches e tags remotas..."
         git fetch --all --tags
 
-        for branch in $(git branch -r | grep -v '\->' | sed 's/origin\///'); do
-          if ! git show-ref --verify --quiet refs/heads/$branch; then
-            git branch --track $branch origin/$branch
-          fi
-        done
-
-        # Verifica se já está em uma branch válida antes de executar git pull --all
-        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-        if [[ "$CURRENT_BRANCH" != "HEAD" ]]; then
-          if [[ "$CURRENT_BRANCH" == "$GITHUB_COMMIT" ]]; then
-            echo "Já estamos na branch $GITHUB_COMMIT. Ignorando 'git pull --all'."
-          else
-            echo "Atualizando branches locais..."
-            git pull --all
-          fi
-        else
-          echo "Repositório não está em uma branch válida. Ignorando 'git pull --all'."
-        fi
-
-        echo "Commitando mudanças antes de trocar de branch..."
+        # Commitando mudanças antes de trocar de branch
+        echo "Commitando mudanças antes de trocar para $BRANCH_NAME..."
         git config --global user.email "github-actions@github.com"
         git config --global user.name "GitHub Actions"
 
-        # Adiciona todas as mudanças e faz commit com uma mensagem automática
         git add .
-        git commit -m "Atualização automática do Dockerfile antes de trocar para a branch rc/$GITHUB_COMMIT"
-
-        echo "Trocando para a branch rc/$GITHUB_COMMIT..."
+        git commit -m "Atualização automática do Dockerfile antes de trocar para a branch $BRANCH_NAME" || echo "Nenhuma mudança para commit."
 
         # Verifica se a branch existe remotamente antes de tentar fazer o checkout
         if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null; then
-          git checkout "rc/$BRANCH_NAME"
+            echo "Trocando para a branch $BRANCH_NAME..."
+            git checkout "$BRANCH_NAME"
+            git pull origin "$BRANCH_NAME"
         else
-          echo "Erro: A branch 'rc/$BRANCH_NAME' não existe remotamente."
-          exit 1
+            echo "Erro: A branch '$BRANCH_NAME' não existe remotamente."
+            exit 1
         fi
 
         # Substituir :latest pela nova tag no Dockerfile
