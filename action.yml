@@ -87,7 +87,7 @@ runs:
     with:
       aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
       aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
-      aws-region: sa-east-1
+      aws-region: ${{ inputs.AWS_REGION }}
 
   - name: Baixando arquivo .env (se aplicável)
     if: ${{ inputs.AWS_S3_ENVFILES_BUCKET != '' && inputs.ENV_FILE_PATH != '' }}
@@ -195,7 +195,7 @@ runs:
       echo "Buscando instâncias EC2 com nome contendo ${{ inputs.SERVER_LIST }} ..."
 
       INSTANCE_INFO=$(aws ec2 describe-instances \
-        --region sa-east-1 \
+        --region ${{ inputs.AWS_REGION }} \
         --filters "Name=tag:Name,Values=*${{ inputs.SERVER_LIST }}*" "Name=instance-state-name,Values=running" \
         --query "Reservations[].Instances[].{InstanceId:InstanceId,PublicIpAddress:PublicIpAddress}" \
         --output json)
