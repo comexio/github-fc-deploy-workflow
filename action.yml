@@ -300,13 +300,21 @@ runs:
           echo "Repositório não está em uma branch válida. Ignorando 'git pull --all'."
         fi
 
-        echo "Trocando para a branch $GITHUB_COMMIT..."
+        echo "Commitando mudanças antes de trocar de branch..."
+        git config --global user.email "github-actions@github.com"
+        git config --global user.name "GitHub Actions"
+
+        # Adiciona todas as mudanças e faz commit com uma mensagem automática
+        git add .
+        git commit -m "Atualização automática do Dockerfile antes de trocar para a branch rc/$GITHUB_COMMIT"
+
+        echo "Trocando para a branch rc/$GITHUB_COMMIT..."
 
         # Verifica se a branch existe remotamente antes de tentar fazer o checkout
-        if git ls-remote --exit-code --heads origin "$GITHUB_COMMIT" >/dev/null; then
-          git checkout "$GITHUB_COMMIT"
+        if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null; then
+          git checkout "rc/$BRANCH_NAME"
         else
-          echo "Erro: A branch '$GITHUB_COMMIT' não existe remotamente."
+          echo "Erro: A branch 'rc/$BRANCH_NAME' não existe remotamente."
           exit 1
         fi
 
