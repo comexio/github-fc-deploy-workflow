@@ -278,15 +278,29 @@ runs:
         export GITHUB_COMMIT=${{ env.TAG }}
 
         cd /home/ubuntu/log-os/
-        git fetch --all
+
+        echo "Baixando todas as branches e tags remotas..."
+        git fetch --all --tags
+
         for branch in $(git branch -r | grep -v '\->' | sed 's/origin\///'); do
           if ! git show-ref --verify --quiet refs/heads/$branch; then
             git branch --track $branch origin/$branch
           fi
         done
-        git pull --all
+
+        # Verifica se já está na branch correta antes de executar git pull --all
+        if git branch --show-current | grep -q "^$GITHUB_COMMIT$"; then
+          echo "Já estamos na branch $GITHUB_COMMIT. Ignorando 'git pull --all'."
+        else
+          echo "Atualizando branches locais..."
+          git pull --all
+        fi
+
         echo "Trocando para a branch $GITHUB_COMMIT..."
-        git checkout $GITHUB_COMMIT
+        git checkout "$GITHUB_COMMIT" 2>/dev/null || git checkout "tags/$GITHUB_COMMIT" -b "$GITHUB_COMMIT" || {
+          echo "Erro: A branch ou tag '$GITHUB_COMMIT' não existe."
+          exit 1
+        }
 
         # Substituir :latest pela nova tag no Dockerfile
         sed -i "s|:latest|:${GITHUB_COMMIT}|g" /tmp/deploy/Dockerfile
