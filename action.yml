@@ -355,8 +355,16 @@ runs:
       PR_TITLE="[RC] branch $CURRENT_BRANCH to Main"
       PR_BODY="Pull Request RC to Main"
 
-      echo "Criando PR: $PR_TITLE"
+      echo "Verificando se a PR já existe..."
 
+      EXISTING_PR=$(gh pr list --base main --head "$CURRENT_BRANCH" --json number --jq '.[0].number')
+
+      if [[ -n "$EXISTING_PR" ]]; then
+        echo "Pull Request já existe: #$EXISTING_PR"
+        exit 0
+      fi
+
+      echo "Criando PR: $PR_TITLE"
       gh pr create --base="main" --head="$CURRENT_BRANCH" --title="$PR_TITLE" --body="$PR_BODY"
     env:
       GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
