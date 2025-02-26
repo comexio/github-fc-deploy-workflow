@@ -221,7 +221,6 @@ runs:
   - name: Instalando OpenVPN
     shell: bash
     run: |
-      sudo apt-get update
       sudo apt-get install openvpn -y
 
   - name: Configurando a VPN (se necessário)
