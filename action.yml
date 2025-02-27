@@ -280,7 +280,7 @@ runs:
         cd /home/ubuntu/log-os/
 
         echo "Baixando todas as branches e tags remotas..."
-        git fetch --all --tags
+        git fetch --all --prune
 
         # Commitando mudanças antes de trocar de branch
         echo "Commitando mudanças antes de trocar para $BRANCH_NAME..."
