@@ -353,9 +353,26 @@ runs:
     if: github.ref == 'refs/heads/main'
     shell: bash
     run: |
-      echo "Atualizando a release ${{ env.TAG }} para remover pré-release e marcar como latest..."
+      echo "Verificando se a nova versão (${TAG}) é maior que a latest..."
 
-      gh release edit ${{ env.TAG }} --prerelease=false --latest
+      # Obtém a versão mais recente marcada como "latest"
+      CURRENT_LATEST=$(gh release list --json tagName,isLatest | jq -r '.[] | select(.isLatest) | .tagName')
+
+      echo "Versão atual de latest: ${CURRENT_LATEST}"
+
+      # Função para comparar versões (considerando SemVer)
+      function version_greater_or_equal() {
+        printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1 | grep -q "^$1$"
+      }
+
+      # Se a nova versão for maior ou igual à latest, atualiza a tag latest
+      if version_greater_or_equal "${TAG}" "${CURRENT_LATEST}"; then
+        echo "A versão ${TAG} é mais recente que ${CURRENT_LATEST}. Atualizando latest..."
+        gh release edit "${TAG}" --prerelease=false --latest
+      else
+        echo "A versão ${TAG} é mais antiga que ${CURRENT_LATEST}. Apenas removendo pré-release."
+        gh release edit "${TAG}" --prerelease=false
+      fi
     env:
       GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
 
