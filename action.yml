@@ -294,6 +294,9 @@ runs:
         if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null; then
             echo "Trocando para a branch $BRANCH_NAME..."
             git checkout "$BRANCH_NAME"
+
+            # Forçar a branch local a ficar idêntica à remota
+            git reset --hard origin/$BRANCH_NAME
             git pull origin "$BRANCH_NAME"
         else
             echo "Erro: A branch '$BRANCH_NAME' não existe remotamente."
