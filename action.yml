@@ -317,11 +317,44 @@ runs:
       key_path: ssh_key.pem
       host: ${{ env.EC2_IPS }}
       script: |
-        set -e
-        aws s3 cp "s3://logcomex-environments-files/log-os/.env.homol" "/home/ubuntu/log-os/.env"
-        cd "/home/ubuntu/log-os/.infra/homol"
+        set -e  # Encerra o script se qualquer comando falhar
+
+        ENV_PATH="/home/ubuntu/log-os/.env"
+        S3_ENV_PATH="s3://logcomex-environments-files/log-os/.env.homol"
+        COMPOSE_DIR="/home/ubuntu/log-os/.infra/homol"
+
+        echo "Baixando o arquivo de ambiente do S3..."
+        if aws s3 ls "$S3_ENV_PATH" > /dev/null 2>&1; then
+          aws s3 cp "$S3_ENV_PATH" "$ENV_PATH"
+        else
+          echo "Erro: O arquivo $S3_ENV_PATH não foi encontrado no S3."
+          exit 1
+        fi
+
+        echo "Entrando no diretório da infraestrutura..."
+        if [ -d "$COMPOSE_DIR" ]; then
+          cd "$COMPOSE_DIR"
+        else
+          echo "Erro: O diretório $COMPOSE_DIR não existe."
+          exit 1
+        fi
+
+        echo "Recriando os containers com Docker Compose..."
         docker-compose up -d --force-recreate
-        docker cp "/home/ubuntu/log-os/.env" logos-app:/var/www/.env
+
+        echo "Aguardando container logos-app iniciar..."
+        sleep 5  # Ajuste se necessário para garantir que o container esteja rodando
+
+        echo "Verificando se o container logos-app está rodando..."
+        if docker ps --format '{{.Names}}' | grep -q "logos-app"; then
+          echo "Copiando arquivo .env para dentro do container logos-app..."
+          docker cp "$ENV_PATH" logos-app:/var/www/.env
+        else
+          echo "Erro: O container logos-app não está rodando. Não foi possível copiar o .env."
+          exit 1
+        fi
+
+        echo "Processo finalizado com sucesso."
 
   - name: Preparando ambiente pós new tag
     uses: appleboy/ssh-action@master
