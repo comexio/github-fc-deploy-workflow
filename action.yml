@@ -323,23 +323,47 @@ runs:
         docker-compose up -d --force-recreate
         docker cp "/home/ubuntu/log-os/.env" logos-app:/var/www/.env
 
-  - name: Preparando ambiente pos new tag
+  - name: Preparando ambiente pós new tag
     uses: appleboy/ssh-action@master
     with:
       username: ${{ inputs.SSH_USER }}
       key_path: ssh_key.pem
       host: ${{ env.EC2_IPS }}
       script: |
-        set -e
+        set -e  # Encerra o script se qualquer comando falhar
+
+        # Define um array de containers que precisam de Composer
+        COMPOSER_CONTAINERS=("logos-app" "logos-reverb" "logos-supervisor")
+
+        echo "Ajustando permissões do diretório de cache..."
         docker exec logos-app chown www-data:www-data bootstrap/cache -R
-        docker exec logos-app composer install
-        docker exec logos-reverb composer install
-        docker exec logos-supervisor composer install
-        docker exec logos-app npm install
-        docker exec logos-app npm run build
+
+        echo "Instalando dependências PHP..."
+        for container in "${COMPOSER_CONTAINERS[@]}"; do
+          if docker ps --format '{{.Names}}' | grep -q "$container"; then
+            echo "Rodando composer install em $container..."
+            docker exec "$container" composer install --no-interaction --prefer-dist --optimize-autoloader
+          else
+            echo "Contêiner $container não encontrado. Pulando..."
+          fi
+        done
+
+        echo "Instalando dependências Node.js..."
+        if docker ps --format '{{.Names}}' | grep -q "logos-app"; then
+          docker exec logos-app npm install --silent
+          docker exec logos-app npm run build
+        else
+          echo "Contêiner logos-app não encontrado. Pulando instalação de dependências Node.js..."
+        fi
+
+        echo "Otimizando configuração do Laravel..."
         docker exec logos-app php artisan config:cache
         docker exec logos-app php artisan view:cache
+
+        echo "Ajustando permissões do diretório de storage..."
         docker exec logos-app chown www-data:www-data storage -R
+
+        echo "Processo concluído com sucesso."
 
   - name: Encerrando a VPN (se aplicável)
     if: always() && inputs.OVPN_CONFIG_FILE != ''
