@@ -260,10 +260,34 @@ runs:
   - name: Copiando o arquivo de Deploy para as instâncias EC2
     shell: bash
     run: |
+      # Verifica se a variável EC2_IPS está definida
+      if [ -z "$EC2_IPS" ]; then
+        echo "Erro: Nenhum IP de instância EC2 foi fornecido."
+        exit 1
+      fi
+
+      # Verifica se o arquivo deploy.tar.gz existe antes de copiar
+      if [ ! -f "deploy.tar.gz" ]; then
+        echo "Erro: O arquivo deploy.tar.gz não foi encontrado."
+        exit 1
+      fi
+
+      # Define as opções do SCP para maior segurança e eficiência
+      SCP_OPTIONS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ssh_key.pem"
+
       for IP in $EC2_IPS; do
-        echo "Copiando para $IP..."
-        scp -o StrictHostKeyChecking=no -i ssh_key.pem deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/
+        echo "Copiando deploy.tar.gz para $IP..."
+        
+        # Tenta copiar o arquivo e verifica se teve sucesso
+        if scp $SCP_OPTIONS deploy.tar.gz ${{ inputs.SSH_USER }}@$IP:/tmp/; then
+          echo "Arquivo copiado com sucesso para $IP."
+        else
+          echo "Erro ao copiar para $IP. Verifique a conexão SSH."
+          exit 1
+        fi
       done
+
+      echo "Cópia finalizada para todas as instâncias EC2."
 
   - name: Manipulando tag nova no manifestos
     uses: appleboy/ssh-action@master
